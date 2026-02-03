@@ -195,6 +195,14 @@ func scanCode(database *db.DB, rootPath string) (int, error) {
 	codeExts := map[string]bool{
 		".ts": true, ".tsx": true, ".vue": true, ".js": true,
 		".php": true, ".go": true,
+		".py": true,                         // Python
+		".java": true,                       // Java
+		".rs": true,                         // Rust
+		".rb": true,                         // Ruby
+		".cs": true,                         // C#
+		".kt": true, ".kts": true,           // Kotlin
+		".swift": true,                      // Swift
+		".dart": true,                       // Dart/Flutter
 	}
 
 	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
@@ -239,6 +247,30 @@ func scanCode(database *db.DB, rootPath string) (int, error) {
 			count += c
 		case ".go":
 			c, _ := parseGoFile(database, path, hash, string(content))
+			count += c
+		case ".py":
+			c, _ := parsePythonFile(database, path, hash, string(content))
+			count += c
+		case ".java":
+			c, _ := parseJavaFile(database, path, hash, string(content))
+			count += c
+		case ".rs":
+			c, _ := parseRustFile(database, path, hash, string(content))
+			count += c
+		case ".rb":
+			c, _ := parseRubyFile(database, path, hash, string(content))
+			count += c
+		case ".cs":
+			c, _ := parseCSharpFile(database, path, hash, string(content))
+			count += c
+		case ".kt", ".kts":
+			c, _ := parseKotlinFile(database, path, hash, string(content))
+			count += c
+		case ".swift":
+			c, _ := parseSwiftFile(database, path, hash, string(content))
+			count += c
+		case ".dart":
+			c, _ := parseDartFile(database, path, hash, string(content))
 			count += c
 		}
 
@@ -626,6 +658,644 @@ func parseGoFile(database *db.DB, path, hash, content string) (int, error) {
 				DefinedIn: path,
 			}
 			database.UpsertEdge(edge)
+		}
+	}
+
+	return count, nil
+}
+
+// ============================================================
+// Python パーサー
+// ============================================================
+func parsePythonFile(database *db.DB, path, hash, content string) (int, error) {
+	count := 0
+	name := strings.TrimSuffix(filepath.Base(path), ".py")
+
+	// ノードタイプ判定
+	var nodeType, nodeID string
+	if strings.Contains(path, "/views/") || strings.Contains(path, "/api/") {
+		nodeType = "controller"
+		nodeID = fmt.Sprintf("controller:%s", name)
+	} else if strings.Contains(path, "/models/") {
+		nodeType = "model"
+		nodeID = fmt.Sprintf("model:%s", name)
+	} else {
+		nodeType = "module"
+		nodeID = fmt.Sprintf("module:%s", name)
+	}
+
+	node := &db.Node{
+		ID:       nodeID,
+		Type:     nodeType,
+		Name:     name,
+		FilePath: path,
+		FileHash: hash,
+	}
+	if err := database.UpsertNode(node); err != nil {
+		return count, err
+	}
+	count++
+
+	// クラス定義を検出
+	classRe := regexp.MustCompile(`class\s+(\w+)\s*[:\(]`)
+	for _, match := range classRe.FindAllStringSubmatch(content, -1) {
+		className := match[1]
+		classID := fmt.Sprintf("class:%s.%s", name, className)
+		classNode := &db.Node{
+			ID:       classID,
+			Type:     "class",
+			Name:     className,
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(classNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: classID, Relation: "contains", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	// 関数定義を検出（トップレベル）
+	funcRe := regexp.MustCompile(`(?m)^def\s+(\w+)\s*\(`)
+	for _, match := range funcRe.FindAllStringSubmatch(content, -1) {
+		funcName := match[1]
+		if !strings.HasPrefix(funcName, "_") { // プライベート関数は除外
+			funcID := fmt.Sprintf("func:%s.%s", name, funcName)
+			funcNode := &db.Node{
+				ID:       funcID,
+				Type:     "function",
+				Name:     funcName,
+				FilePath: path,
+				FileHash: hash,
+			}
+			database.UpsertNode(funcNode)
+			database.UpsertEdge(&db.Edge{
+				FromID: nodeID, ToID: funcID, Relation: "contains", Source: "auto", DefinedIn: path,
+			})
+		}
+	}
+
+	// Flask/FastAPIルート検出
+	routeRe := regexp.MustCompile(`@(?:app|router)\.(get|post|put|delete|patch)\s*\(\s*['"](/[^'"]*)['"]\s*\)`)
+	for _, match := range routeRe.FindAllStringSubmatch(content, -1) {
+		method := strings.ToUpper(match[1])
+		apiPath := match[2]
+		apiID := fmt.Sprintf("api:%s %s", method, apiPath)
+		apiNode := &db.Node{
+			ID:       apiID,
+			Type:     "api",
+			Name:     fmt.Sprintf("%s %s", method, apiPath),
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(apiNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: apiID, Relation: "implements", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	return count, nil
+}
+
+// ============================================================
+// Java パーサー
+// ============================================================
+func parseJavaFile(database *db.DB, path, hash, content string) (int, error) {
+	count := 0
+	name := strings.TrimSuffix(filepath.Base(path), ".java")
+
+	// ノードタイプ判定
+	var nodeType, nodeID string
+	if strings.Contains(path, "/controller/") || strings.HasSuffix(name, "Controller") {
+		nodeType = "controller"
+		nodeID = fmt.Sprintf("controller:%s", name)
+	} else if strings.Contains(path, "/model/") || strings.Contains(path, "/entity/") {
+		nodeType = "model"
+		nodeID = fmt.Sprintf("model:%s", name)
+	} else if strings.Contains(path, "/service/") {
+		nodeType = "service"
+		nodeID = fmt.Sprintf("service:%s", name)
+	} else if strings.Contains(path, "/repository/") {
+		nodeType = "repository"
+		nodeID = fmt.Sprintf("repository:%s", name)
+	} else {
+		nodeType = "class"
+		nodeID = fmt.Sprintf("class:%s", name)
+	}
+
+	node := &db.Node{
+		ID:       nodeID,
+		Type:     nodeType,
+		Name:     name,
+		FilePath: path,
+		FileHash: hash,
+	}
+	if err := database.UpsertNode(node); err != nil {
+		return count, err
+	}
+	count++
+
+	// publicメソッドを検出
+	methodRe := regexp.MustCompile(`public\s+(?:static\s+)?[\w<>\[\]]+\s+(\w+)\s*\(`)
+	for _, match := range methodRe.FindAllStringSubmatch(content, -1) {
+		methodName := match[1]
+		if methodName != name { // コンストラクタは除外
+			methodID := fmt.Sprintf("method:%s.%s", name, methodName)
+			methodNode := &db.Node{
+				ID:       methodID,
+				Type:     "method",
+				Name:     methodName,
+				FilePath: path,
+				FileHash: hash,
+			}
+			database.UpsertNode(methodNode)
+			database.UpsertEdge(&db.Edge{
+				FromID: nodeID, ToID: methodID, Relation: "contains", Source: "auto", DefinedIn: path,
+			})
+		}
+	}
+
+	// Spring Boot APIエンドポイント検出
+	mappingRe := regexp.MustCompile(`@(Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:value\s*=\s*)?['"](/[^'"]*)['"]\s*\)`)
+	for _, match := range mappingRe.FindAllStringSubmatch(content, -1) {
+		method := strings.ToUpper(match[1])
+		apiPath := match[2]
+		apiID := fmt.Sprintf("api:%s %s", method, apiPath)
+		apiNode := &db.Node{
+			ID:       apiID,
+			Type:     "api",
+			Name:     fmt.Sprintf("%s %s", method, apiPath),
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(apiNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: apiID, Relation: "implements", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	return count, nil
+}
+
+// ============================================================
+// Rust パーサー
+// ============================================================
+func parseRustFile(database *db.DB, path, hash, content string) (int, error) {
+	count := 0
+	name := strings.TrimSuffix(filepath.Base(path), ".rs")
+
+	nodeType := "module"
+	nodeID := fmt.Sprintf("module:%s", name)
+
+	node := &db.Node{
+		ID:       nodeID,
+		Type:     nodeType,
+		Name:     name,
+		FilePath: path,
+		FileHash: hash,
+	}
+	if err := database.UpsertNode(node); err != nil {
+		return count, err
+	}
+	count++
+
+	// pub struct検出
+	structRe := regexp.MustCompile(`pub\s+struct\s+(\w+)`)
+	for _, match := range structRe.FindAllStringSubmatch(content, -1) {
+		structName := match[1]
+		structID := fmt.Sprintf("struct:%s.%s", name, structName)
+		structNode := &db.Node{
+			ID:       structID,
+			Type:     "struct",
+			Name:     structName,
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(structNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: structID, Relation: "contains", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	// pub fn検出
+	funcRe := regexp.MustCompile(`pub\s+(?:async\s+)?fn\s+(\w+)`)
+	for _, match := range funcRe.FindAllStringSubmatch(content, -1) {
+		funcName := match[1]
+		funcID := fmt.Sprintf("func:%s.%s", name, funcName)
+		funcNode := &db.Node{
+			ID:       funcID,
+			Type:     "function",
+			Name:     funcName,
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(funcNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: funcID, Relation: "contains", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	// Actix-web / Axumルート検出
+	routeRe := regexp.MustCompile(`#\[(get|post|put|delete|patch)\s*\(\s*"(/[^"]*)"\s*\)\]`)
+	for _, match := range routeRe.FindAllStringSubmatch(content, -1) {
+		method := strings.ToUpper(match[1])
+		apiPath := match[2]
+		apiID := fmt.Sprintf("api:%s %s", method, apiPath)
+		apiNode := &db.Node{
+			ID:       apiID,
+			Type:     "api",
+			Name:     fmt.Sprintf("%s %s", method, apiPath),
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(apiNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: apiID, Relation: "implements", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	return count, nil
+}
+
+// ============================================================
+// Ruby パーサー
+// ============================================================
+func parseRubyFile(database *db.DB, path, hash, content string) (int, error) {
+	count := 0
+	name := strings.TrimSuffix(filepath.Base(path), ".rb")
+
+	// ノードタイプ判定
+	var nodeType, nodeID string
+	if strings.Contains(path, "/controllers/") || strings.HasSuffix(name, "_controller") {
+		nodeType = "controller"
+		nodeID = fmt.Sprintf("controller:%s", name)
+	} else if strings.Contains(path, "/models/") {
+		nodeType = "model"
+		nodeID = fmt.Sprintf("model:%s", name)
+	} else {
+		nodeType = "module"
+		nodeID = fmt.Sprintf("module:%s", name)
+	}
+
+	node := &db.Node{
+		ID:       nodeID,
+		Type:     nodeType,
+		Name:     name,
+		FilePath: path,
+		FileHash: hash,
+	}
+	if err := database.UpsertNode(node); err != nil {
+		return count, err
+	}
+	count++
+
+	// クラス定義を検出
+	classRe := regexp.MustCompile(`class\s+(\w+)`)
+	for _, match := range classRe.FindAllStringSubmatch(content, -1) {
+		className := match[1]
+		classID := fmt.Sprintf("class:%s.%s", name, className)
+		classNode := &db.Node{
+			ID:       classID,
+			Type:     "class",
+			Name:     className,
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(classNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: classID, Relation: "contains", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	// publicメソッド検出
+	methodRe := regexp.MustCompile(`(?m)^\s*def\s+(\w+)`)
+	for _, match := range methodRe.FindAllStringSubmatch(content, -1) {
+		methodName := match[1]
+		if !strings.HasPrefix(methodName, "_") {
+			methodID := fmt.Sprintf("method:%s.%s", name, methodName)
+			methodNode := &db.Node{
+				ID:       methodID,
+				Type:     "method",
+				Name:     methodName,
+				FilePath: path,
+				FileHash: hash,
+			}
+			database.UpsertNode(methodNode)
+			database.UpsertEdge(&db.Edge{
+				FromID: nodeID, ToID: methodID, Relation: "contains", Source: "auto", DefinedIn: path,
+			})
+		}
+	}
+
+	return count, nil
+}
+
+// ============================================================
+// C# パーサー
+// ============================================================
+func parseCSharpFile(database *db.DB, path, hash, content string) (int, error) {
+	count := 0
+	name := strings.TrimSuffix(filepath.Base(path), ".cs")
+
+	// ノードタイプ判定
+	var nodeType, nodeID string
+	if strings.Contains(path, "/Controllers/") || strings.HasSuffix(name, "Controller") {
+		nodeType = "controller"
+		nodeID = fmt.Sprintf("controller:%s", name)
+	} else if strings.Contains(path, "/Models/") {
+		nodeType = "model"
+		nodeID = fmt.Sprintf("model:%s", name)
+	} else if strings.Contains(path, "/Services/") {
+		nodeType = "service"
+		nodeID = fmt.Sprintf("service:%s", name)
+	} else {
+		nodeType = "class"
+		nodeID = fmt.Sprintf("class:%s", name)
+	}
+
+	node := &db.Node{
+		ID:       nodeID,
+		Type:     nodeType,
+		Name:     name,
+		FilePath: path,
+		FileHash: hash,
+	}
+	if err := database.UpsertNode(node); err != nil {
+		return count, err
+	}
+	count++
+
+	// publicメソッド検出
+	methodRe := regexp.MustCompile(`public\s+(?:async\s+)?(?:static\s+)?[\w<>\[\]]+\s+(\w+)\s*\(`)
+	for _, match := range methodRe.FindAllStringSubmatch(content, -1) {
+		methodName := match[1]
+		if methodName != name { // コンストラクタは除外
+			methodID := fmt.Sprintf("method:%s.%s", name, methodName)
+			methodNode := &db.Node{
+				ID:       methodID,
+				Type:     "method",
+				Name:     methodName,
+				FilePath: path,
+				FileHash: hash,
+			}
+			database.UpsertNode(methodNode)
+			database.UpsertEdge(&db.Edge{
+				FromID: nodeID, ToID: methodID, Relation: "contains", Source: "auto", DefinedIn: path,
+			})
+		}
+	}
+
+	// ASP.NET Core APIエンドポイント検出
+	routeRe := regexp.MustCompile(`\[Http(Get|Post|Put|Delete|Patch)\s*\(\s*"([^"]*)"\s*\)\]`)
+	for _, match := range routeRe.FindAllStringSubmatch(content, -1) {
+		method := strings.ToUpper(match[1])
+		apiPath := match[2]
+		if !strings.HasPrefix(apiPath, "/") {
+			apiPath = "/" + apiPath
+		}
+		apiID := fmt.Sprintf("api:%s %s", method, apiPath)
+		apiNode := &db.Node{
+			ID:       apiID,
+			Type:     "api",
+			Name:     fmt.Sprintf("%s %s", method, apiPath),
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(apiNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: apiID, Relation: "implements", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	return count, nil
+}
+
+// ============================================================
+// Kotlin パーサー
+// ============================================================
+func parseKotlinFile(database *db.DB, path, hash, content string) (int, error) {
+	count := 0
+	ext := filepath.Ext(path)
+	name := strings.TrimSuffix(filepath.Base(path), ext)
+
+	// ノードタイプ判定
+	var nodeType, nodeID string
+	if strings.Contains(path, "/controller/") || strings.HasSuffix(name, "Controller") {
+		nodeType = "controller"
+		nodeID = fmt.Sprintf("controller:%s", name)
+	} else if strings.Contains(path, "/model/") || strings.Contains(path, "/entity/") {
+		nodeType = "model"
+		nodeID = fmt.Sprintf("model:%s", name)
+	} else if strings.Contains(path, "/service/") {
+		nodeType = "service"
+		nodeID = fmt.Sprintf("service:%s", name)
+	} else {
+		nodeType = "class"
+		nodeID = fmt.Sprintf("class:%s", name)
+	}
+
+	node := &db.Node{
+		ID:       nodeID,
+		Type:     nodeType,
+		Name:     name,
+		FilePath: path,
+		FileHash: hash,
+	}
+	if err := database.UpsertNode(node); err != nil {
+		return count, err
+	}
+	count++
+
+	// fun検出
+	funcRe := regexp.MustCompile(`fun\s+(\w+)\s*\(`)
+	for _, match := range funcRe.FindAllStringSubmatch(content, -1) {
+		funcName := match[1]
+		funcID := fmt.Sprintf("func:%s.%s", name, funcName)
+		funcNode := &db.Node{
+			ID:       funcID,
+			Type:     "function",
+			Name:     funcName,
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(funcNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: funcID, Relation: "contains", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	// Spring Boot APIエンドポイント検出（Javaと同じ）
+	mappingRe := regexp.MustCompile(`@(Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:value\s*=\s*)?['"](/[^'"]*)['"]\s*\)`)
+	for _, match := range mappingRe.FindAllStringSubmatch(content, -1) {
+		method := strings.ToUpper(match[1])
+		apiPath := match[2]
+		apiID := fmt.Sprintf("api:%s %s", method, apiPath)
+		apiNode := &db.Node{
+			ID:       apiID,
+			Type:     "api",
+			Name:     fmt.Sprintf("%s %s", method, apiPath),
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(apiNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: apiID, Relation: "implements", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	return count, nil
+}
+
+// ============================================================
+// Swift パーサー
+// ============================================================
+func parseSwiftFile(database *db.DB, path, hash, content string) (int, error) {
+	count := 0
+	name := strings.TrimSuffix(filepath.Base(path), ".swift")
+
+	// ノードタイプ判定
+	var nodeType, nodeID string
+	if strings.Contains(path, "/Controllers/") || strings.HasSuffix(name, "Controller") {
+		nodeType = "controller"
+		nodeID = fmt.Sprintf("controller:%s", name)
+	} else if strings.Contains(path, "/Models/") {
+		nodeType = "model"
+		nodeID = fmt.Sprintf("model:%s", name)
+	} else if strings.Contains(path, "/Views/") || strings.HasSuffix(name, "View") {
+		nodeType = "view"
+		nodeID = fmt.Sprintf("view:%s", name)
+	} else {
+		nodeType = "class"
+		nodeID = fmt.Sprintf("class:%s", name)
+	}
+
+	node := &db.Node{
+		ID:       nodeID,
+		Type:     nodeType,
+		Name:     name,
+		FilePath: path,
+		FileHash: hash,
+	}
+	if err := database.UpsertNode(node); err != nil {
+		return count, err
+	}
+	count++
+
+	// class/struct検出
+	typeRe := regexp.MustCompile(`(?:class|struct)\s+(\w+)`)
+	for _, match := range typeRe.FindAllStringSubmatch(content, -1) {
+		typeName := match[1]
+		typeID := fmt.Sprintf("class:%s.%s", name, typeName)
+		typeNode := &db.Node{
+			ID:       typeID,
+			Type:     "class",
+			Name:     typeName,
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(typeNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: typeID, Relation: "contains", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	// func検出
+	funcRe := regexp.MustCompile(`func\s+(\w+)\s*\(`)
+	for _, match := range funcRe.FindAllStringSubmatch(content, -1) {
+		funcName := match[1]
+		funcID := fmt.Sprintf("func:%s.%s", name, funcName)
+		funcNode := &db.Node{
+			ID:       funcID,
+			Type:     "function",
+			Name:     funcName,
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(funcNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: funcID, Relation: "contains", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	return count, nil
+}
+
+// ============================================================
+// Dart パーサー
+// ============================================================
+func parseDartFile(database *db.DB, path, hash, content string) (int, error) {
+	count := 0
+	name := strings.TrimSuffix(filepath.Base(path), ".dart")
+
+	// ノードタイプ判定
+	var nodeType, nodeID string
+	if strings.Contains(path, "/screens/") || strings.Contains(path, "/pages/") || strings.HasSuffix(name, "_screen") || strings.HasSuffix(name, "_page") {
+		nodeType = "view"
+		nodeID = fmt.Sprintf("view:%s", name)
+	} else if strings.Contains(path, "/widgets/") || strings.HasSuffix(name, "_widget") {
+		nodeType = "component"
+		nodeID = fmt.Sprintf("component:%s", name)
+	} else if strings.Contains(path, "/models/") {
+		nodeType = "model"
+		nodeID = fmt.Sprintf("model:%s", name)
+	} else if strings.Contains(path, "/services/") || strings.Contains(path, "/api/") {
+		nodeType = "service"
+		nodeID = fmt.Sprintf("service:%s", name)
+	} else if strings.Contains(path, "/providers/") || strings.Contains(path, "/bloc/") || strings.Contains(path, "/cubit/") {
+		nodeType = "store"
+		nodeID = fmt.Sprintf("store:%s", name)
+	} else {
+		nodeType = "module"
+		nodeID = fmt.Sprintf("module:%s", name)
+	}
+
+	node := &db.Node{
+		ID:       nodeID,
+		Type:     nodeType,
+		Name:     name,
+		FilePath: path,
+		FileHash: hash,
+	}
+	if err := database.UpsertNode(node); err != nil {
+		return count, err
+	}
+	count++
+
+	// class検出
+	classRe := regexp.MustCompile(`class\s+(\w+)`)
+	for _, match := range classRe.FindAllStringSubmatch(content, -1) {
+		className := match[1]
+		classID := fmt.Sprintf("class:%s.%s", name, className)
+		classNode := &db.Node{
+			ID:       classID,
+			Type:     "class",
+			Name:     className,
+			FilePath: path,
+			FileHash: hash,
+		}
+		database.UpsertNode(classNode)
+		database.UpsertEdge(&db.Edge{
+			FromID: nodeID, ToID: classID, Relation: "contains", Source: "auto", DefinedIn: path,
+		})
+	}
+
+	// トップレベル関数検出
+	funcRe := regexp.MustCompile(`(?m)^[\w<>\[\]?]+\s+(\w+)\s*\(`)
+	for _, match := range funcRe.FindAllStringSubmatch(content, -1) {
+		funcName := match[1]
+		// build, initState などのFlutter標準メソッドは除外
+		if funcName != "build" && funcName != "initState" && funcName != "dispose" && !strings.HasPrefix(funcName, "_") {
+			funcID := fmt.Sprintf("func:%s.%s", name, funcName)
+			funcNode := &db.Node{
+				ID:       funcID,
+				Type:     "function",
+				Name:     funcName,
+				FilePath: path,
+				FileHash: hash,
+			}
+			database.UpsertNode(funcNode)
+			database.UpsertEdge(&db.Edge{
+				FromID: nodeID, ToID: funcID, Relation: "contains", Source: "auto", DefinedIn: path,
+			})
 		}
 	}
 
