@@ -323,9 +323,42 @@ doc-tracer impact <file> [--json] [--db tracer.db]
 
 ## インストール
 
+### go install（推奨）
+
 ```bash
+go install github.com/tomohiro-owada/doc-tracer@latest
+```
+
+### ソースからビルド
+
+```bash
+git clone https://github.com/tomohiro-owada/doc-tracer.git
+cd doc-tracer
 go build -o doc-tracer .
 ```
+
+---
+
+## 対応言語
+
+doc-tracerは以下の言語を自動スキャンします：
+
+| 言語 | 拡張子 | 検出対象 |
+|------|--------|----------|
+| **JavaScript/TypeScript** | .js, .ts, .tsx | モジュール、composable、store |
+| **Vue** | .vue | コンポーネント、API呼び出し |
+| **PHP** | .php | コントローラー、モデル、APIルート |
+| **Go** | .go | モジュール、関数、メソッド |
+| **Python** | .py | クラス、関数、Flask/FastAPIルート |
+| **Java** | .java | クラス、メソッド、Spring Bootエンドポイント |
+| **Rust** | .rs | struct、関数、Actix-web/Axumルート |
+| **Ruby** | .rb | クラス、メソッド |
+| **C#** | .cs | クラス、メソッド、ASP.NETエンドポイント |
+| **Kotlin** | .kt, .kts | クラス、関数、Spring Bootエンドポイント |
+| **Swift** | .swift | クラス、struct、関数 |
+| **Dart** | .dart | クラス、Widget、Screen、Provider/Bloc |
+
+各パーサーはディレクトリ構造から適切なノードタイプ（controller, model, service, view等）を自動判定します。
 
 ---
 
