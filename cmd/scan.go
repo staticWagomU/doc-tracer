@@ -237,6 +237,9 @@ func scanCode(database *db.DB, rootPath string) (int, error) {
 		case ".php":
 			c, _ := parsePhpFile(database, path, hash, string(content))
 			count += c
+		case ".go":
+			c, _ := parseGoFile(database, path, hash, string(content))
+			count += c
 		}
 
 		return nil
@@ -512,6 +515,113 @@ func parsePhpFile(database *db.DB, path, hash, content string) (int, error) {
 				FromID:    nodeID,
 				ToID:      tableID,
 				Relation:  "uses",
+				Source:    "auto",
+				DefinedIn: path,
+			}
+			database.UpsertEdge(edge)
+		}
+	}
+
+	return count, nil
+}
+
+func parseGoFile(database *db.DB, path, hash, content string) (int, error) {
+	count := 0
+
+	// ファイル名からモジュール名を取得
+	name := strings.TrimSuffix(filepath.Base(path), ".go")
+
+	// パスからノードタイプとIDプレフィックスを決定
+	var nodeType, nodeID string
+
+	if strings.Contains(path, "/cmd/") || strings.HasPrefix(path, "cmd/") {
+		// cmdディレクトリ内 → コマンドモジュール
+		nodeType = "module"
+		nodeID = fmt.Sprintf("module:%s", name)
+	} else if strings.Contains(path, "/internal/db/") || strings.Contains(path, "internal/db/") {
+		// internal/db → DBモジュール
+		nodeType = "module"
+		nodeID = fmt.Sprintf("module:db/%s", name)
+	} else if strings.Contains(path, "/internal/") || strings.HasPrefix(path, "internal/") {
+		// その他のinternal → 内部モジュール
+		nodeType = "module"
+		// パスからサブディレクトリを抽出
+		parts := strings.Split(path, "/internal/")
+		if len(parts) > 1 {
+			subPath := strings.TrimSuffix(parts[1], ".go")
+			nodeID = fmt.Sprintf("module:%s", subPath)
+		} else {
+			nodeID = fmt.Sprintf("module:%s", name)
+		}
+	} else {
+		// その他 → 汎用モジュール
+		nodeType = "module"
+		nodeID = fmt.Sprintf("module:%s", name)
+	}
+
+	node := &db.Node{
+		ID:       nodeID,
+		Type:     nodeType,
+		Name:     name,
+		FilePath: path,
+		FileHash: hash,
+	}
+
+	if err := database.UpsertNode(node); err != nil {
+		return count, err
+	}
+	count++
+
+	// 関数定義を検出
+	funcRe := regexp.MustCompile(`func\s+(\w+)\s*\(`)
+	funcMatches := funcRe.FindAllStringSubmatch(content, -1)
+	for _, match := range funcMatches {
+		funcName := match[1]
+		// エクスポートされた関数（大文字始まり）のみ記録
+		if len(funcName) > 0 && funcName[0] >= 'A' && funcName[0] <= 'Z' {
+			funcID := fmt.Sprintf("func:%s.%s", name, funcName)
+			funcNode := &db.Node{
+				ID:       funcID,
+				Type:     "function",
+				Name:     funcName,
+				FilePath: path,
+				FileHash: hash,
+			}
+			database.UpsertNode(funcNode)
+
+			// 関数はモジュールに属する
+			edge := &db.Edge{
+				FromID:    nodeID,
+				ToID:      funcID,
+				Relation:  "contains",
+				Source:    "auto",
+				DefinedIn: path,
+			}
+			database.UpsertEdge(edge)
+		}
+	}
+
+	// メソッド定義を検出 (func (receiver Type) MethodName)
+	methodRe := regexp.MustCompile(`func\s+\([^)]+\)\s+(\w+)\s*\(`)
+	methodMatches := methodRe.FindAllStringSubmatch(content, -1)
+	for _, match := range methodMatches {
+		methodName := match[1]
+		// エクスポートされたメソッド（大文字始まり）のみ記録
+		if len(methodName) > 0 && methodName[0] >= 'A' && methodName[0] <= 'Z' {
+			methodID := fmt.Sprintf("func:%s.%s", name, methodName)
+			methodNode := &db.Node{
+				ID:       methodID,
+				Type:     "function",
+				Name:     methodName,
+				FilePath: path,
+				FileHash: hash,
+			}
+			database.UpsertNode(methodNode)
+
+			edge := &db.Edge{
+				FromID:    nodeID,
+				ToID:      methodID,
+				Relation:  "contains",
 				Source:    "auto",
 				DefinedIn: path,
 			}

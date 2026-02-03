@@ -1,0 +1,13 @@
+# Binary
+doc-tracer
+
+# Database
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
