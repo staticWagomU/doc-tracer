@@ -341,9 +341,8 @@ CREATE TABLE edges (
 ## Roadmap
 
 - [ ] Git diff integration (`doc-tracer impact --staged`)
-- [ ] CI integration (auto-detect doc update misses in PRs)
 - [ ] Claude Code skill integration
-- [ ] More language support
+- [x] More language support (13 languages)
 
 ---
 

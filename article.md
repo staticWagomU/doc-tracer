@@ -265,8 +265,7 @@ doc-tracer check
 ## 今後の改良予定
 
 - **git diff連携**: `doc-tracer impact --staged` で変更ファイルから自動取得
-- **CI連携**: PRでドキュメント更新漏れを自動検出
-- **AIとの統合**: impactの結果からドキュメントを自動更新
+- **AIとの統合**: impactの結果からドキュメントを自動更新（Claude Code skill化）
 
 ---
 
