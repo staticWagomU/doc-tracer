@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"doc-tracer/internal/db"
+	"github.com/tomohiro-owada/doc-tracer/internal/db"
 
 	"github.com/spf13/cobra"
 )

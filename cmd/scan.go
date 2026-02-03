@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"doc-tracer/internal/db"
+	"github.com/tomohiro-owada/doc-tracer/internal/db"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"

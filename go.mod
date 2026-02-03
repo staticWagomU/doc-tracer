@@ -1,4 +1,4 @@
-module doc-tracer
+module github.com/tomohiro-owada/doc-tracer
 
 go 1.24.0
 

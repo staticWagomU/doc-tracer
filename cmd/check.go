@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"doc-tracer/internal/db"
+	"github.com/tomohiro-owada/doc-tracer/internal/db"
 
 	"github.com/spf13/cobra"
 )

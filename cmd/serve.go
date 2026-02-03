@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 
-	"doc-tracer/internal/db"
+	"github.com/tomohiro-owada/doc-tracer/internal/db"
 
 	"github.com/spf13/cobra"
 )

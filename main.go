@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"doc-tracer/cmd"
+	"github.com/tomohiro-owada/doc-tracer/cmd"
 )
 
 func main() {
