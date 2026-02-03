@@ -245,20 +245,30 @@ doc-tracer check
 
 ---
 
-## Claude Codeとの連携
+## Claude Codeとの連携（スキル化済み）
+
+Claude Code向けのスキルとして統合済み。コミット前に自動で影響範囲をチェックできる。
 
 ```bash
-# コード変更後、影響範囲を確認
-doc-tracer impact src/components/LoginForm.vue
+# ステージングしたファイルの影響範囲を一発確認
+git add src/components/LoginForm.vue
+doc-tracer impact --staged
 
-# 出力をClaude Codeに渡して更新依頼
-# 「以下のドキュメントを更新してください: ...」
+# 出力例:
+# ステージングされたファイル (1件):
+#   - src/components/LoginForm.vue
+#
+# 影響を受けるドキュメント (5件):
+#   - LoginForm設計書.md
+#   - ログイン詳細設計書.md
+#   - 認証基本設計書.md
+#   ...
 
 # 整合性チェック
 doc-tracer check
 ```
 
-将来的にはClaude Code向けのスキルとして統合したい。
+Claude Codeに「このドキュメントを更新して」と依頼すれば、漏れなく更新できる。
 
 ---
 
