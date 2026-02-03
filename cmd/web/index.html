@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>doc-tracer - トレーサビリティビューア</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            display: flex;
+        }
+
+        .sidebar {
+            width: 320px;
+            background: #252542;
+            padding: 20px;
+            border-right: 1px solid #3d3d5c;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            padding: 15px 20px;
+            background: #252542;
+            border-bottom: 1px solid #3d3d5c;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        h2 {
+            font-size: 14px;
+            color: #888;
+            text-transform: uppercase;
+            margin: 20px 0 10px 0;
+        }
+
+        .search-box {
+            flex: 1;
+            max-width: 400px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #3d3d5c;
+            border-radius: 6px;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 14px;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: #6366f1;
+        }
+
+        .graph-container {
+            flex: 1;
+            position: relative;
+        }
+
+        #graph {
+            width: 100%;
+            height: 100%;
+        }
+
+        .node {
+            cursor: pointer;
+        }
+
+        .node circle {
+            stroke: #fff;
+            stroke-width: 2px;
+        }
+
+        .node text {
+            font-size: 11px;
+            fill: #fff;
+        }
+
+        .link {
+            stroke: #4a4a6a;
+            stroke-opacity: 0.6;
+            fill: none;
+        }
+
+        .link.highlighted {
+            stroke: #fbbf24;
+            stroke-width: 2px;
+            stroke-opacity: 1;
+        }
+
+        .node.highlighted circle {
+            stroke: #fbbf24;
+            stroke-width: 3px;
+        }
+
+        .node.dimmed {
+            opacity: 0.2;
+        }
+
+        .link.dimmed {
+            stroke-opacity: 0.1;
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #3d3d5c;
+        }
+
+        .stat-value {
+            font-weight: bold;
+        }
+
+        .legend {
+            margin-top: 20px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 0;
+        }
+
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .impact-list {
+            margin-top: 10px;
+        }
+
+        .impact-item {
+            padding: 8px;
+            background: #1a1a2e;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .impact-item:hover {
+            background: #2d2d44;
+        }
+
+        .impact-path {
+            color: #888;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+
+        .no-data {
+            color: #888;
+            font-style: italic;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: #252542;
+            border: 1px solid #3d3d5c;
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+            max-width: 300px;
+        }
+
+        .tooltip-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .tooltip-type {
+            color: #888;
+            font-size: 11px;
+        }
+
+        .tooltip-path {
+            color: #6366f1;
+            font-size: 11px;
+            margin-top: 5px;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h1>📊 doc-tracer</h1>
+
+        <h2>統計</h2>
+        <div id="stats">
+            <div class="stat">
+                <span>ノード数</span>
+                <span class="stat-value" id="node-count">-</span>
+            </div>
+            <div class="stat">
+                <span>エッジ数</span>
+                <span class="stat-value" id="edge-count">-</span>
+            </div>
+            <div class="stat">
+                <span>ドキュメント</span>
+                <span class="stat-value" id="doc-count">-</span>
+            </div>
+        </div>
+
+        <h2>凡例</h2>
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #3b82f6;"></div>
+                <span>基本設計</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #8b5cf6;"></div>
+                <span>詳細設計</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #10b981;"></div>
+                <span>プログラム設計</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #6366f1;"></div>
+                <span>component</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #ec4899;"></div>
+                <span>controller</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #8b5cf6;"></div>
+                <span>model</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #06b6d4;"></div>
+                <span>store/composable</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #94a3b8;"></div>
+                <span>module</span>
+            </div>
+        </div>
+
+        <h2>影響を受けるドキュメント</h2>
+        <div id="impact-list" class="impact-list">
+            <div class="no-data">ノードを選択してください</div>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="header">
+            <div class="search-box">
+                <input type="text" id="search" placeholder="ファイル名やノード名で検索...">
+            </div>
+        </div>
+        <div class="graph-container">
+            <svg id="graph"></svg>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip" style="display: none;"></div>
+
+    <script>
+        const colors = {
+            document: '#10b981',
+            component: '#6366f1',
+            api: '#f59e0b',
+            controller: '#ec4899',
+            model: '#8b5cf6',
+            store: '#06b6d4',
+            composable: '#06b6d4',
+            module: '#94a3b8',
+            db_table: '#78716c'
+        };
+
+        // ドキュメントレイヤー別の色
+        function getNodeColor(node) {
+            if (node.type !== 'document') {
+                return colors[node.type] || '#888';
+            }
+            // ドキュメントのレイヤーを判定
+            if (node.id.includes('03_基本設計')) {
+                return '#3b82f6'; // 青
+            } else if (node.id.includes('04_詳細設計')) {
+                return '#8b5cf6'; // 紫
+            } else if (node.id.includes('05_プログラム設計')) {
+                return '#10b981'; // 緑
+            }
+            return colors.document;
+        }
+
+        let graphData = { nodes: [], edges: [] };
+        let simulation;
+
+        async function loadData() {
+            try {
+                const response = await fetch('/api/graph');
+                graphData = await response.json();
+
+                document.getElementById('node-count').textContent = graphData.nodes?.length || 0;
+                document.getElementById('edge-count').textContent = graphData.edges?.length || 0;
+                document.getElementById('doc-count').textContent =
+                    graphData.nodes?.filter(n => n.type === 'document').length || 0;
+
+                renderGraph();
+            } catch (error) {
+                console.error('データ取得エラー:', error);
+            }
+        }
+
+        function renderGraph() {
+            const svg = d3.select('#graph');
+            const container = document.querySelector('.graph-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            svg.attr('width', width).attr('height', height);
+            svg.selectAll('*').remove();
+
+            if (!graphData.nodes?.length) {
+                svg.append('text')
+                    .attr('x', width / 2)
+                    .attr('y', height / 2)
+                    .attr('text-anchor', 'middle')
+                    .attr('fill', '#888')
+                    .text('データがありません。`doc-tracer scan` を実行してください。');
+                return;
+            }
+
+            const g = svg.append('g');
+
+            // ズーム
+            svg.call(d3.zoom()
+                .extent([[0, 0], [width, height]])
+                .scaleExtent([0.1, 4])
+                .on('zoom', (event) => g.attr('transform', event.transform)));
+
+            // エッジをリンク形式に変換
+            const nodeMap = new Map(graphData.nodes.map(n => [n.id, n]));
+            const links = (graphData.edges || [])
+                .filter(e => nodeMap.has(e.from_id) && nodeMap.has(e.to_id))
+                .map(e => ({
+                    source: e.from_id,
+                    target: e.to_id,
+                    relation: e.relation
+                }));
+
+            simulation = d3.forceSimulation(graphData.nodes)
+                .force('link', d3.forceLink(links).id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-200))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(30));
+
+            const link = g.append('g')
+                .selectAll('line')
+                .data(links)
+                .enter()
+                .append('line')
+                .attr('class', 'link');
+
+            const node = g.append('g')
+                .selectAll('g')
+                .data(graphData.nodes)
+                .enter()
+                .append('g')
+                .attr('class', 'node')
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended));
+
+            node.append('circle')
+                .attr('r', d => d.type === 'document' ? 12 : 8)
+                .attr('fill', d => getNodeColor(d));
+
+            node.append('text')
+                .attr('dx', 15)
+                .attr('dy', 4)
+                .text(d => d.name.length > 20 ? d.name.substring(0, 20) + '...' : d.name);
+
+            // ホバーイベント
+            node.on('mouseover', showTooltip)
+                .on('mouseout', hideTooltip)
+                .on('click', selectNode);
+
+            simulation.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+
+                node.attr('transform', d => `translate(${d.x},${d.y})`);
+            });
+        }
+
+        function showTooltip(event, d) {
+            const tooltip = document.getElementById('tooltip');
+            tooltip.innerHTML = `
+                <div class="tooltip-title">${d.name}</div>
+                <div class="tooltip-type">${d.type}</div>
+                ${d.file_path ? `<div class="tooltip-path">${d.file_path}</div>` : ''}
+            `;
+            tooltip.style.display = 'block';
+            tooltip.style.left = (event.pageX + 10) + 'px';
+            tooltip.style.top = (event.pageY + 10) + 'px';
+        }
+
+        function hideTooltip() {
+            document.getElementById('tooltip').style.display = 'none';
+        }
+
+        async function selectNode(event, d) {
+            // ハイライトをリセット
+            d3.selectAll('.node').classed('highlighted', false).classed('dimmed', true);
+            d3.selectAll('.link').classed('highlighted', false).classed('dimmed', true);
+
+            // 上流方向のエッジマップを構築（to_id → from_id の方向）
+            const upstreamMap = new Map();
+            d3.selectAll('.link').each(function(l) {
+                const sourceId = l.source.id || l.source;
+                const targetId = l.target.id || l.target;
+                // target から source への上流方向のみ
+                if (!upstreamMap.has(targetId)) upstreamMap.set(targetId, []);
+                upstreamMap.get(targetId).push({ node: sourceId, link: this });
+            });
+
+            // BFSで上流方向のみ探索
+            const connectedIds = new Set([d.id]);
+            const connectedLinks = new Set();
+            const queue = [d.id];
+
+            while (queue.length > 0) {
+                const currentId = queue.shift();
+                const upstreams = upstreamMap.get(currentId) || [];
+                for (const { node: upstreamId, link } of upstreams) {
+                    connectedLinks.add(link);
+                    if (!connectedIds.has(upstreamId)) {
+                        connectedIds.add(upstreamId);
+                        queue.push(upstreamId);
+                    }
+                }
+            }
+
+            // ハイライト適用
+            connectedLinks.forEach(link => {
+                d3.select(link).classed('highlighted', true).classed('dimmed', false);
+            });
+
+            d3.selectAll('.node').each(function(n) {
+                if (connectedIds.has(n.id)) {
+                    d3.select(this).classed('highlighted', true).classed('dimmed', false);
+                }
+            });
+
+            // 影響を受けるドキュメントを取得
+            if (d.file_path) {
+                try {
+                    const response = await fetch(`/api/impact?file=${encodeURIComponent(d.file_path)}`);
+                    const docs = await response.json();
+
+                    const impactList = document.getElementById('impact-list');
+                    if (docs && docs.length > 0) {
+                        impactList.innerHTML = docs.map(doc => `
+                            <div class="impact-item">
+                                <div>${doc.name}</div>
+                                <div class="impact-path">${doc.file_path}</div>
+                            </div>
+                        `).join('');
+                    } else {
+                        impactList.innerHTML = '<div class="no-data">影響を受けるドキュメントはありません</div>';
+                    }
+                } catch (error) {
+                    console.error('影響範囲取得エラー:', error);
+                }
+            }
+        }
+
+        function dragstarted(event) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            event.subject.fx = event.subject.x;
+            event.subject.fy = event.subject.y;
+        }
+
+        function dragged(event) {
+            event.subject.fx = event.x;
+            event.subject.fy = event.y;
+        }
+
+        function dragended(event) {
+            if (!event.active) simulation.alphaTarget(0);
+            event.subject.fx = null;
+            event.subject.fy = null;
+        }
+
+        // 検索
+        document.getElementById('search').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+
+            d3.selectAll('.node').each(function(d) {
+                const matches = d.name.toLowerCase().includes(query) ||
+                               (d.file_path && d.file_path.toLowerCase().includes(query));
+                d3.select(this)
+                    .classed('dimmed', query && !matches)
+                    .classed('highlighted', query && matches);
+            });
+        });
+
+        // リサイズ対応
+        window.addEventListener('resize', () => {
+            if (graphData.nodes?.length) {
+                renderGraph();
+            }
+        });
+
+        // 初期化
+        loadData();
+    </script>
+</body>
+</html>
