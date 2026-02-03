@@ -2,6 +2,9 @@
 
 **ドキュメントとコードの双方向トレーサビリティを実現するツール**
 
+<img width="1263" height="738" alt="Screenshot 2026-02-03 at 2 50 43 PM" src="https://github.com/user-attachments/assets/160b1347-790c-49a4-b1b7-f0a1e7ee6b27" />
+
+
 ---
 
 ## このツールが解決する問題
