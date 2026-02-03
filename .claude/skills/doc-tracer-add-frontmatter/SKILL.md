@@ -90,3 +90,53 @@ trace:
 - IDはファイルパスから自動生成されるため、`id:` フィールドは省略可能
 - `parent` と `children` は同じエッジを生成するため、どちらか一方だけ使用
 - 孤立ドキュメント（parentなし）は `doc-tracer check` で検出される
+
+---
+
+## ⚠️ 重要: `uses:` フィールドでハマらないために
+
+### 絶対にやってはいけないこと
+
+❌ **存在しないノードIDを `uses:` に書く**
+
+```yaml
+# これはリンク切れになる
+uses:
+  - module:scan  # ← まだスキャンしてないのに書いた
+```
+
+### 正しい手順
+
+1. **先にスキャンを実行してノードIDを確認**
+   ```bash
+   ./doc-tracer scan .
+   curl -s http://localhost:8888/api/graph | jq '.nodes[] | .id'
+   ```
+
+2. **確認したIDのみを `uses:` に書く**
+   ```yaml
+   uses:
+     - module:scan  # ← スキャン結果で存在を確認済み
+   ```
+
+3. **再スキャンしてチェック**
+   ```bash
+   ./doc-tracer scan . && ./doc-tracer check
+   ```
+
+### よくあるノードID形式
+
+| コードタイプ | ノードID形式 | 例 |
+|-------------|-------------|-----|
+| Goファイル (cmd/) | `module:ファイル名` | `module:scan` |
+| Goファイル (internal/db/) | `module:db/ファイル名` | `module:db/schema` |
+| Vueコンポーネント | `component:コンポーネント名` | `component:Header` |
+| TypeScript | `module:ファイル名` | `module:utils` |
+| Composable | `composable:関数名` | `composable:useAuth` |
+
+### 完了確認
+
+```bash
+./doc-tracer scan . && ./doc-tracer check
+# 「問題なし」が出るまで uses: を修正する
+```
