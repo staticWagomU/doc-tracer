@@ -340,7 +340,7 @@ CREATE TABLE edges (
 
 ## Roadmap
 
-- [ ] Git diff integration (`doc-tracer impact --staged`)
+- [x] Git diff integration (`doc-tracer impact --staged`)
 - [x] Claude Code skill integration
 - [x] More language support (13 languages)
 
