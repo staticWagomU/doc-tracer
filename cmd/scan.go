@@ -22,21 +22,24 @@ var scanCmd = &cobra.Command{
 	Long: `指定されたパスをスキャンして、ノードとエッジを構築します。
 
 例:
-  doc-tracer scan .                    # カレントディレクトリをスキャン
-  doc-tracer scan ./docs --docs-only   # ドキュメントのみスキャン
-  doc-tracer scan ./src --code-only    # コードのみスキャン`,
+  doc-tracer scan .                              # カレントディレクトリをスキャン
+  doc-tracer scan ./docs --docs-only             # ドキュメントのみスキャン
+  doc-tracer scan ./src --code-only              # コードのみスキャン
+  doc-tracer scan . --include-node-modules       # node_modules も含めてスキャン`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runScan,
 }
 
 var (
-	docsOnly bool
-	codeOnly bool
+	docsOnly           bool
+	codeOnly           bool
+	includeNodeModules bool
 )
 
 func init() {
 	scanCmd.Flags().BoolVar(&docsOnly, "docs-only", false, "ドキュメントのみスキャン")
 	scanCmd.Flags().BoolVar(&codeOnly, "code-only", false, "コードのみスキャン")
+	scanCmd.Flags().BoolVar(&includeNodeModules, "include-node-modules", false, "node_modules ディレクトリも含めてスキャン")
 	rootCmd.AddCommand(scanCmd)
 }
 
@@ -213,9 +216,19 @@ func scanCode(database *db.DB, rootPath string) (int, error) {
 		if info.IsDir() {
 			// 除外ディレクトリ
 			name := info.Name()
-			if name == "node_modules" || name == "vendor" || name == ".git" || name == "dist" || name == "build" {
+
+			// 常に除外するディレクトリ
+			if name == ".git" {
 				return filepath.SkipDir
 			}
+
+			// --include-node-modules フラグが指定されていない場合のみ除外
+			if !includeNodeModules {
+				if name == "node_modules" || name == "vendor" || name == "dist" || name == "build" {
+					return filepath.SkipDir
+				}
+			}
+
 			return nil
 		}
 
