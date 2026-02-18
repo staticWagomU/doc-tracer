@@ -332,15 +332,18 @@ func parseVueFile(database *db.DB, path, hash, content string) (int, error) {
 	}
 	count++
 
-	// import文を解析
+	// import文を解析してインポートされたコンポーネントを追跡
 	importRe := regexp.MustCompile(`import\s+(?:\{[^}]+\}|[^{}\s]+)\s+from\s+['"]([^'"]+)['"]`)
 	matches := importRe.FindAllStringSubmatch(content, -1)
+	importedComponents := make(map[string]bool) // インポートされたコンポーネント名を追跡
+
 	for _, match := range matches {
 		importPath := match[1]
 		// 相対パスのコンポーネントへの参照を検出（親子関係）
 		if strings.HasSuffix(importPath, ".vue") || strings.Contains(importPath, "components/") {
 			targetName := filepath.Base(importPath)
 			targetName = strings.TrimSuffix(targetName, ".vue")
+			importedComponents[targetName] = true // インポート済みとして記録
 			edge := &db.Edge{
 				FromID:    nodeID,
 				ToID:      fmt.Sprintf("component:%s", targetName),
@@ -403,10 +406,20 @@ func parseVueFile(database *db.DB, path, hash, content string) (int, error) {
 				continue
 			}
 			seenComponents[componentName] = true
+
+			// インポートされているコンポーネントは component: を使用
+			// インポートされていない（グローバルコンポーネント）は module: を使用
+			var targetID string
+			if importedComponents[componentName] {
+				targetID = fmt.Sprintf("component:%s", componentName)
+			} else {
+				targetID = fmt.Sprintf("module:%s", componentName)
+			}
+
 			// テンプレート内のコンポーネント使用は親子関係（contains）
 			edge := &db.Edge{
 				FromID:    nodeID,
-				ToID:      fmt.Sprintf("component:%s", componentName),
+				ToID:      targetID,
 				Relation:  "contains",
 				Source:    "auto",
 				DefinedIn: path,
